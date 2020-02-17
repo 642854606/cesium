@@ -287,6 +287,11 @@ import ShadowMode from './ShadowMode.js';
          */
         this.backFaceCulling = true;
 
+        /**
+         * TODO
+         */
+        this.alpha = 1.0;
+
         this._oceanNormalMap = undefined;
         this._zoomedOutOceanSpecularIntensity = undefined;
     }

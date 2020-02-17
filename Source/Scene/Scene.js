@@ -632,6 +632,7 @@ import View from './View.js';
 
             originalFramebuffer : undefined,
             useGlobeDepthFramebuffer : false,
+            useGlobeTranslucency : false,
             separatePrimitiveFramebuffer : false,
             useOIT : false,
             useInvertClassification : false,
@@ -2231,6 +2232,8 @@ import View from './View.js';
 
         var clearGlobeDepth = environmentState.clearGlobeDepth;
         var useDepthPlane = environmentState.useDepthPlane;
+        var useGlobeTranslucency = environmentState.useGlobeTranslucency;
+        var globeTranslucency = view.globeTranslucency;
         var separatePrimitiveFramebuffer = environmentState.separatePrimitiveFramebuffer = false;
         var clearDepth = scene._depthClearCommand;
         var clearStencil = scene._stencilClearCommand;
@@ -2285,8 +2288,24 @@ import View from './View.js';
             us.updatePass(Pass.GLOBE);
             var commands = frustumCommands.commands[Pass.GLOBE];
             var length = frustumCommands.indices[Pass.GLOBE];
-            for (j = 0; j < length; ++j) {
-                executeCommand(commands[j], scene, context, passState);
+
+            if (useGlobeTranslucency) {
+                globeTranslucency.update(commands, length);
+                for (j = 0; j < length; ++j) {
+                    executeCommand(commands[j].derivedCommands.backFaceCommand, scene, context, passState);
+                }
+                passState.framebuffer = globeTranslucency.framebuffer;
+                for (j = 0; j < length; ++j) {
+                    executeCommand(commands[j].derivedCommands.frontFaceCommand, scene, context, passState);
+                }
+                passState.framebuffer = TODO;
+                if (clearGlobeDepth) {
+                    globeTranslucency.executeDepthTest(globeDepth.depthTexture); // TODO
+                }
+            } else {
+                for (j = 0; j < length; ++j) {
+                    executeCommand(commands[j], scene, context, passState);
+                }
             }
 
             if (defined(globeDepth) && environmentState.useGlobeDepthFramebuffer) {
@@ -2303,6 +2322,13 @@ import View from './View.js';
             length = frustumCommands.indices[Pass.TERRAIN_CLASSIFICATION];
             for (j = 0; j < length; ++j) {
                 executeCommand(commands[j], scene, context, passState);
+            }
+
+            if (useGlobeTranslucency) {
+                passState.framebuffer = globeTranslucency.framebuffer;
+                for (j = 0; j < length; ++j) {
+                    executeCommand(commands[j], scene, context, passState);
+                }
             }
 
             if (clearGlobeDepth) {
@@ -2433,6 +2459,12 @@ import View from './View.js';
                 executeCommand(commands[j], scene, context, passState);
             }
 
+            var globeTranslucencyCommand;
+            if (globeTranslucency) {
+                globeTranslucency.executeDepthTest(globeDepth.depthTexture);
+                globeTranslucencyCommand = globeTranslucency.command;
+            }
+
             if (index !== 0 && scene.mode !== SceneMode.SCENE2D) {
                 // Do not overlap frustums in the translucent pass to avoid blending artifacts
                 frustum.near = frustumCommands.near;
@@ -2449,7 +2481,7 @@ import View from './View.js';
             us.updatePass(Pass.TRANSLUCENT);
             commands = frustumCommands.commands[Pass.TRANSLUCENT];
             commands.length = frustumCommands.indices[Pass.TRANSLUCENT];
-            executeTranslucentCommands(scene, executeCommand, passState, commands, invertClassification);
+            executeTranslucentCommands(scene, executeCommand, passState, commands, invertClassification, globeTranslucencyCommand);
 
             if (context.depthTexture && scene.useDepthPicking && (environmentState.useGlobeDepthFramebuffer || renderTranslucentDepthForPick)) {
                 // PERFORMANCE_IDEA: Use MRT to avoid the extra copy.
@@ -3051,6 +3083,8 @@ import View from './View.js';
             view.globeDepth.update(context, passState, view.viewport, scene._hdr, environmentState.clearGlobeDepth);
             view.globeDepth.clear(context, passState, clearColor);
         }
+
+        environmentState.useGlobeTranslucency = useGlobeDepthFramebuffer && (scene.globe.alpha < 1.0);
 
         // If supported, configure OIT to use the globe depth framebuffer and clear the OIT framebuffer.
         var oit = view.oit;
